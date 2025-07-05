@@ -12,6 +12,64 @@ class MediaElementObserver {
   }
 
   /**
+   * Recursively traverse all nodes to find shadow roots and media elements
+   * @param {Element|Document} rootElement - Root element to start traversal
+   * @param {boolean} audioEnabled - Whether to include audio elements
+   * @returns {Array<HTMLMediaElement>} Found media elements
+   * @private
+   */
+  _traverseForShadowRootsAndMedia(rootElement, audioEnabled) {
+    const mediaElements = [];
+    const mediaTagNodeNames = audioEnabled ? ['VIDEO', 'AUDIO'] : ['VIDEO'];
+    const ignoredNodes = ['#text', 'STYLE', 'SCRIPT'];
+
+    const traverse = (element) => {
+      // Check if current element is a media element
+      if (mediaTagNodeNames.includes(element.nodeName)) {
+        mediaElements.push(element);
+      }
+
+      // Get all children (regular + shadow root children)
+      const children = Array.from(element.childNodes || []);
+      if (element.shadowRoot) {
+        // Set up observer for this shadow root
+        this._observeShadowRoot(element.shadowRoot);
+        children.push(...Array.from(element.shadowRoot.childNodes));
+      }
+
+      // Recursively process children
+      children
+        .filter(
+          (node) => node.nodeType === Node.ELEMENT_NODE && !ignoredNodes.includes(node.nodeName)
+        )
+        .forEach((child) => traverse(child));
+    };
+
+    traverse(rootElement);
+    return mediaElements;
+  }
+
+  /**
+   * Set up mutation observer for shadow root (helper method)
+   * @param {ShadowRoot} shadowRoot - Shadow root to observe
+   * @private
+   */
+  _observeShadowRoot(shadowRoot) {
+    // Store reference to mutation observer for shadow root observation
+    if (this.mutationObserver && this.mutationObserver.observeShadowRoot) {
+      this.mutationObserver.observeShadowRoot(shadowRoot);
+      window.VSC.logger.debug('Shadow root observer set up during traversal');
+    } else {
+      // Store shadow root for later observation when mutation observer is available
+      if (!this._pendingShadowRoots) {
+        this._pendingShadowRoots = new Set();
+      }
+      this._pendingShadowRoots.add(shadowRoot);
+      window.VSC.logger.debug('Shadow root queued for later observation');
+    }
+  }
+
+  /**
    * Scan document for existing media elements
    * @param {Document} document - Document to scan
    * @returns {Array<HTMLMediaElement>} Found media elements
@@ -25,25 +83,22 @@ class MediaElementObserver {
     const regularMedia = Array.from(document.querySelectorAll(mediaTagSelector));
     mediaElements.push(...regularMedia);
 
-    // Find media elements in shadow DOMs
-    document.querySelectorAll('*').forEach((element) => {
-      if (element.shadowRoot) {
-        const shadowMedia = element.shadowRoot.querySelectorAll(mediaTagSelector);
-        mediaElements.push(...shadowMedia);
-      }
-    });
+    // Add comprehensive shadow DOM traversal
+    const shadowMedia = this._traverseForShadowRootsAndMedia(document, audioEnabled);
+    mediaElements.push(...shadowMedia);
 
     // Find site-specific media elements
     const siteSpecificMedia = this.siteHandler.detectSpecialVideos(document);
     mediaElements.push(...siteSpecificMedia);
 
-    // Filter out ignored videos
-    const filteredMedia = mediaElements.filter((media) => {
+    // Filter out ignored videos and remove duplicates
+    const uniqueMedia = [...new Set(mediaElements)];
+    const filteredMedia = uniqueMedia.filter((media) => {
       return !this.siteHandler.shouldIgnoreVideo(media);
     });
 
     window.VSC.logger.info(
-      `Found ${filteredMedia.length} media elements (${mediaElements.length} total, ${mediaElements.length - filteredMedia.length} filtered out)`
+      `Found ${filteredMedia.length} media elements (${uniqueMedia.length} total, ${uniqueMedia.length - filteredMedia.length} filtered out)`
     );
     return filteredMedia;
   }
@@ -172,6 +227,25 @@ class MediaElementObserver {
     }
 
     return true;
+  }
+
+  /**
+   * Set the mutation observer reference for shadow root observation
+   * @param {VideoMutationObserver} mutationObserver - Mutation observer instance
+   */
+  setMutationObserver(mutationObserver) {
+    this.mutationObserver = mutationObserver;
+
+    // Process any pending shadow roots
+    if (this._pendingShadowRoots) {
+      this._pendingShadowRoots.forEach((shadowRoot) => {
+        this.mutationObserver.observeShadowRoot(shadowRoot);
+      });
+      window.VSC.logger.debug(
+        `Set up observers for ${this._pendingShadowRoots.size} pending shadow roots`
+      );
+      this._pendingShadowRoots.clear();
+    }
   }
 
   /**

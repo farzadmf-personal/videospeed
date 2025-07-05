@@ -80,13 +80,13 @@ class VideoSpeedExtension {
   initializeDocument(document) {
     try {
       // Prevent double initialization
-      if (document.body && document.body.classList.contains('vsc-initialized')) {
+      if (document.body && document.body.classList.contains('vsc-initialized-new')) {
         return;
       }
 
       if (document.body) {
-        document.body.classList.add('vsc-initialized');
-        this.logger.debug('vsc-initialized added to document body');
+        document.body.classList.add('vsc-initialized-new');
+        this.logger.debug('vsc-initialized-new added to document body');
       }
 
       // Set up event listeners
@@ -126,6 +126,9 @@ class VideoSpeedExtension {
       (video, parent) => this.onVideoFound(video, parent),
       (video) => this.onVideoRemoved(video)
     );
+
+    // Connect the observers so media observer can set up shadow root observation
+    this.mediaObserver.setMutationObserver(this.mutationObserver);
   }
 
   /**

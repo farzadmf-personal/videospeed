@@ -161,7 +161,7 @@ class VideoMutationObserver {
 
     // Handle shadow DOM
     if (node.shadowRoot) {
-      this.observeShadowRoot(node.shadowRoot);
+      this._observeShadowRoot(node.shadowRoot);
       children = Array.from(node.shadowRoot.children);
     }
 
@@ -177,11 +177,19 @@ class VideoMutationObserver {
   }
 
   /**
+   * Set up observer for shadow root (public method for external use)
+   * @param {ShadowRoot} shadowRoot - Shadow root to observe
+   */
+  observeShadowRoot(shadowRoot) {
+    this._observeShadowRoot(shadowRoot);
+  }
+
+  /**
    * Set up observer for shadow root
    * @param {ShadowRoot} shadowRoot - Shadow root to observe
    * @private
    */
-  observeShadowRoot(shadowRoot) {
+  _observeShadowRoot(shadowRoot) {
     if (this.shadowObservers.has(shadowRoot)) {
       return; // Already observing
     }
